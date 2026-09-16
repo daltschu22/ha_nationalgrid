@@ -124,6 +124,63 @@ async def _async_migrate_statistics_v1_to_v2(hass: HomeAssistant) -> None:
         )
 
 
+async def _async_migrate_gas_ccf_to_therm(hass: HomeAssistant) -> None:
+    """Clear gas statistics still labeled CCF so they reimport as therms.
+
+    National Grid's gas usage has always been reported in therms
+    (usageType: THERMS, totalTherms in bill history); this integration used
+    to mislabel it as CCF because Home Assistant had no native therm unit.
+    The stat_id stays the same — only the unit changes — so existing Energy
+    Dashboard configuration referencing the gas stat_id keeps working once
+    it reimports. This is idempotent: zero rows affected after the first run.
+    """
+    try:
+        instance = recorder_get_instance(hass)
+    except Exception:  # noqa: BLE001
+        _LOGGER.debug("Recorder not available — skipping gas unit migration")
+        return
+
+    _STALE_META_SUBQ = (  # noqa: N806
+        "SELECT id FROM statistics_meta "
+        "WHERE source = 'national_grid_us' "
+        "AND statistic_id LIKE 'national_grid_us:%_gas_hourly_usage' "
+        "AND unit_of_measurement = 'CCF'"
+    )
+    _DELETE_STATS_SQL = (  # noqa: N806
+        f"DELETE FROM statistics WHERE metadata_id IN ({_STALE_META_SUBQ})"  # noqa: S608
+    )
+    _DELETE_SHORT_TERM_SQL = (  # noqa: N806
+        "DELETE FROM statistics_short_term "  # noqa: S608
+        f"WHERE metadata_id IN ({_STALE_META_SUBQ})"
+    )
+    _DELETE_META_SQL = (  # noqa: N806
+        "DELETE FROM statistics_meta "
+        "WHERE source = 'national_grid_us' "
+        "AND statistic_id LIKE 'national_grid_us:%_gas_hourly_usage' "
+        "AND unit_of_measurement = 'CCF'"
+    )
+
+    def _clear() -> int:
+        with instance.get_session() as session:
+            session.execute(sa_text(_DELETE_STATS_SQL))
+            session.execute(sa_text(_DELETE_SHORT_TERM_SQL))
+            result = session.execute(sa_text(_DELETE_META_SQL))
+            session.commit()
+            return result.rowcount  # type: ignore[attr-defined]
+
+    try:
+        count = await instance.async_add_executor_job(_clear)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Gas unit migration encountered an error: %s", err)
+        return
+
+    if count:
+        _LOGGER.info(
+            "Cleared %d CCF-labeled gas statistic series for reimport as therms",
+            count,
+        )
+
+
 def _warn_if_old_component_present(hass: HomeAssistant) -> None:
     """Fire a persistent notification if the old national_grid folder still exists.
 
@@ -177,6 +234,10 @@ async def async_setup_entry(
     # Rename any statistics left over from the old `national_grid` domain.
     # This is idempotent — zero rows affected after the first run.
     await _async_migrate_statistics_v1_to_v2(hass)
+
+    # Clear gas statistics still labeled CCF so they reimport as therms.
+    # This is idempotent — zero rows affected after the first run.
+    await _async_migrate_gas_ccf_to_therm(hass)
 
     # Run the initial statistics import in the background so setup returns
     # immediately after the coordinator data is fetched.  Writing potentially
