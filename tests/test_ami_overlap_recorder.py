@@ -92,12 +92,24 @@ async def test_daily_and_hourly_refreshes_count_each_day_once(hass, repair_old_o
                 ("electric_return_hourly_usage", 0.5),
             ]:
                 values = rows[f"{prefix}_{suffix}"]
+                expected_days = [
+                    (date(2026, 9, 20) + timedelta(days=i)).isoformat()
+                    for i in range(
+                        (current.date() - timedelta(days=2) - date(2026, 9, 20)).days
+                        + 1
+                    )
+                ]
+                actual_days = [
+                    datetime.fromtimestamp(row["start"], UTC).date().isoformat()
+                    for row in values
+                ]
+                assert actual_days == expected_days
                 for row in values:
                     day = datetime.fromtimestamp(row["start"], UTC).date().isoformat()
                     multiplier = 2 if day == bad_day else 1
                     assert row["change"] == pytest.approx(expected * multiplier)
                 assert values[-1]["sum"] == pytest.approx(
-                    expected * (len(values) + bool(bad_day)),
+                    expected * (len(expected_days) + bool(bad_day)),
                 )
 
             # Interval-only refreshes must not stack retained AMI records again.
