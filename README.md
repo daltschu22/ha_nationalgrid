@@ -9,20 +9,6 @@ A custom [Home Assistant](https://www.home-assistant.io/) integration that provi
 
 This is a fork of [ryanmorash/ha_nationalgrid](https://github.com/ryanmorash/ha_nationalgrid), updated to use the actively maintained `py-nationalgrid` library and rebuilt around the 15-minute AMI data endpoint.
 
-### AMI overlap fix in this fork
-
-This fork of [virtitnerd/ha_nationalgrid](https://github.com/virtitnerd/ha_nationalgrid)
-fixes double-counting on the date shared by the historical hourly download and
-the recent 15-minute download. National Grid's API includes both date bounds;
-the historical request now ends the day before the recent request starts,
-including when the historical request falls back to the 15-minute endpoint.
-This applies to the initial import and nightly refreshes, for both import and export.
-
-Previously imported recent statistics are corrected by a successful nightly
-refresh, which rewrites the recent window. Older affected data requires a
-separate reimport. The tests cover inclusive API responses, calendar boundaries,
-request failures, and repeated updates through Home Assistant's real recorder.
-
 ## Features
 
 - **Account & Meter Device Hierarchy**: Account devices appear as parent devices in HA; each meter device is linked via "Connected via" to its account
